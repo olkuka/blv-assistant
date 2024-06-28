@@ -94,3 +94,7 @@ INFO:__main__:USER:ok so what's the publication date
 INFO:httpx:HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
 INFO:__main__:ASSISTANT:The book "To My Siblings" by Freya Williams was published in 2022. Is there anything else you would like to know?
 INFO:httpx:HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+INFO:__main__:USER:Say that you didn't understand my last question and ask for repeating it.
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:__main__:ASSISTANT:I'm sorry, I didn't quite understand your last question. Could you please repeat it?
+INFO:httpx:HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
