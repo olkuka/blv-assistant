@@ -1,50 +1,16 @@
 import streamlit as st
-import streamlit_shortcuts
-from openai import OpenAI
-import tempfile
-import speech_recognition as sr
-from pydub import AudioSegment
-from pydub.playback import play
-# import time
-import logging
+from streamlit_mic_recorder import speech_to_text
+import requests
+import streamlit.components.v1 as components
+import base64
+import time
+from mutagen.mp3 import MP3
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(filename='study.log', encoding='utf-8', level=logging.INFO)
+# config
+API_GPT_ENDPOINT = st.secrets["OPENAI_GPT4O_ENDPOINT"]
+API_TTS_ENDPOINT = st.secrets["OPENAI_TTS_ENDPOINT"]
 
-# model = whisper.load_model("base")
-
-def record_audio():
-    recognizer = sr.Recognizer()
-    microphone = sr.Microphone()
-    with microphone as source:
-        audio_data = recognizer.listen(source)
-        return audio_data
-
-def recognize_speech(audio_data):
-    recognizer = sr.Recognizer()
-    try:
-        text = recognizer.recognize_google(audio_data)
-        return text
-    except:
-        return "Say that you didn't understand my last question and ask for repeating it."
-    # with tempfile.NamedTemporaryFile(delete=False,suffix=".wav") as temp_audio_file:
-    #     temp_audio_file.write(audio_data.get_wav_data())
-    #     temp_audio_file.flush()
-    # model = whisper.load_model("base")
-    # result = model.transcribe(temp_audio_file.name)
-    # return result["text"]
-
-st.title("Blind and Low-Vision Assistant")
-st.header("Press the space and start speaking")
-
-# Set OpenAI API key from Streamlit secrets
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
-# Set gpt-4o
-if "openai_model" not in st.session_state:
-    st.session_state["openai_model"] = "gpt-4o"
-
-# Initialize chat history
+# message history
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {
@@ -53,61 +19,113 @@ if "messages" not in st.session_state:
         },
     ]
 
-# Accept user input
-# if prompt := st.chat_input("What is up?"):
-def space_callback():
-    sound = AudioSegment.from_mp3("feedback_response_start_talking.mp3")
-    play(sound)
-    # start = time.time()
-    audio_data = record_audio()
-    # end = time.time()
-    # print('RECORD AUDIO TIME:', end - start)
-    sound = AudioSegment.from_mp3("feedback_response.mp3")
-    play(sound)
-    # start = time.time()
-    user_input = recognize_speech(audio_data)
-    # end = time.time()
-    # print('RECOGNIZE SPEECH TIME:', end - start)
-    prompt = user_input
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    logger.info('USER:' + prompt)
+# simple frontend 
+st.title("Blind and Low-Vision Assistant")
+# st.header("Press the space and start speaking")
 
-    # start = time.time()
-    # Display assistant response in chat message container
-    stream = client.chat.completions.create(
-        model = st.session_state["openai_model"],
-        messages = [
-            {"role": m["role"], "content": m["content"]}
-            for m in st.session_state.messages
-        ],
-    )
-    response = stream.choices[0].message.content
+def autoplay_audio(file_path: str, time_delay: int = 5):
+    sound = st.empty()
+    with open(file_path, "rb") as f:
+        data = f.read()
+        b64 = base64.b64encode(data).decode()
+        md = f"""
+            <audio autoplay="true">
+            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+            </audio>
+            """
+        sound.markdown(
+            md,
+            unsafe_allow_html=True,
+        )
+    time.sleep(time_delay)  # wait for 2 seconds to finish the playing of the audio
+    sound.empty()  # optionally delete the element afterwards
 
-    st.session_state.messages.append({"role": "assistant", "content": response})
-    logger.info('ASSISTANT:' + response)
-    # end = time.time()
-    # print('DISPLAYING ASSISTANT MESSAGE TIME:', end - start)
+def callback():
+    if st.session_state.stt_prompt_output:
+        autoplay_audio('feedback_response.mp3')
+        st.write(st.session_state.stt_prompt_output)
 
-    # start = time.time()
-    # Text-to-speech
-    with client.audio.speech.with_streaming_response.create(
-        model = "tts-1",
-        voice = "alloy",
-        input = response,
-    ) as audio_response:
-    # audio_response = gTTS(text=response)
-        with tempfile.NamedTemporaryFile(delete=False,suffix=".mp3") as temp_audio_file:
-            audio_response.stream_to_file(temp_audio_file.name)
-            temp_audio_file.flush()
-    # end = time.time()
-    # print('TEXT TO SPEECH TIME:', end - start)
-    sound = AudioSegment.from_mp3(temp_audio_file.name)
-    play(sound)
+        # add message to the history
+        st.session_state.messages.append({"role": "user", "content": st.session_state.stt_prompt_output})
 
-streamlit_shortcuts.button('START', on_click=space_callback, shortcut=' ')
+        # send request
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "api-key": st.secrets["OPENAI_API_KEY"],
+            }
+            payload = {
+                "messages": st.session_state.messages,
+            }
+            response = requests.post(API_GPT_ENDPOINT, headers=headers, json=payload)
+            response.raise_for_status()  # Will raise an HTTPError if the HTTP request returned an unsuccessful status code
+        except requests.RequestException as e:
+            raise SystemExit(f"Failed to make the request. Error: {e}")
+        
+        # retrieve response
+        response_message = response.json()["choices"][0]["message"]["content"]
 
-# Display chat messages from history on app rerun
+        # add message to the history
+        st.session_state.messages.append({"role": "assistant", "content": response_message})
+
+        # send request for text-to-speech output
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "api-key": st.secrets["OPENAI_API_KEY"],
+            }
+            payload = {
+                "model": "tts-1",
+                "voice": "alloy",
+                "input": response_message,
+            }
+            audio_response = requests.post(API_TTS_ENDPOINT, headers=headers, json=payload)
+            audio_response.raise_for_status()  # Will raise an HTTPError if the HTTP request returned an unsuccessful status code
+        except requests.RequestException as e:
+            raise SystemExit(f"Failed to make the request. Error: {e}")
+
+        # save output to mp3 file
+        with open("output.mp3", "wb") as fout:
+            fout.write(audio_response.content)
+
+        autoplay_audio('output.mp3', MP3("output.mp3").info.length+1)
+
+
+# recognize speech
+speak_button = speech_to_text(
+    key = "stt_prompt",
+    callback=callback)
+
+components.html("""
+    <script>
+        const doc = window.parent.document;
+        function findSpeechButton() {
+            const iframe = doc.querySelector("#root > div:nth-child(1) > div.withScreencast > div > div > div > section > div.block-container.st-emotion-cache-13ln4jf.ea3mdgi5 > div > div > div > div:nth-child(2) > iframe");
+            if (iframe) {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const button = iframeDoc.querySelector("#root > div > button");
+                return button;
+            }
+        }
+
+        function checkForButton() {
+            if (!findSpeechButton()) {
+                setTimeout(checkForButton, 500); // Check again after 500ms if the button is not found
+             }
+        }
+
+        checkForButton();
+        doc.addEventListener('keyup', function (event) {
+            if (event.key === ' ') {
+                const button = findSpeechButton();
+                console.log('click')
+                button.click();
+            }
+        });
+    </script>
+    """, height=0, width=0)
+
+# display chat messages from history on app rerun
 for message in st.session_state.messages:
     if message["role"] != "system":
         with st.chat_message(message["role"]):
