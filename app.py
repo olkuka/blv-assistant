@@ -5,10 +5,13 @@ import streamlit.components.v1 as components
 import base64
 import time
 from mutagen.mp3 import MP3
+import logging
 
 # config
 API_GPT_ENDPOINT = st.secrets["OPENAI_GPT4O_ENDPOINT"]
 API_TTS_ENDPOINT = st.secrets["OPENAI_TTS_ENDPOINT"]
+logger = logging.getLogger(__name__)
+logging.basicConfig(filename='study.log', encoding='utf-8', level=logging.INFO)
 
 # message history
 if "messages" not in st.session_state:
@@ -45,6 +48,7 @@ def callback():
 
         # add message to the history
         st.session_state.messages.append({"role": "user", "content": st.session_state.stt_prompt_output})
+        logger.info('USER:' + st.session_state.stt_prompt_output)
 
         # send request
         try:
@@ -65,6 +69,7 @@ def callback():
 
         # add message to the history
         st.session_state.messages.append({"role": "assistant", "content": response_message})
+        logger.info('ASSISTANT:' + response_message)
 
         # send request for text-to-speech output
         try:
@@ -112,13 +117,23 @@ components.html("""
         function checkForButton() {
             if (!findSpeechButton()) {
                 setTimeout(checkForButton, 500); // Check again after 500ms if the button is not found
-             }
+             } else {
+                return findSpeechButton();
+            }
         }
 
-        checkForButton();
+        const button = checkForButton();
+        button.addEventListener('click', function() {
+            if (isStart) {
+                new Audio("data:audio/wav;base64," + blip).play();
+            } else {
+                new Audio("data:audio/wav;base64," + blipReversed).play();
+            }
+            isStart = !isStart;
+        });
+                
         doc.addEventListener('keyup', function (event) {
             if (event.key === ' ') {
-                const button = findSpeechButton();
                 button.click();
                 if (isStart) {
                     new Audio("data:audio/wav;base64," + blip).play();
