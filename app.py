@@ -114,34 +114,30 @@ components.html("""
             }
         }
 
-        function checkForButton() {
-            if (!findSpeechButton()) {
-                setTimeout(checkForButton, 500); // Check again after 500ms if the button is not found
-             } else {
-                return findSpeechButton();
+        function waitForButton(callback) {
+            const button = findSpeechButton();
+            if (!button) {
+                setTimeout(() => waitForButton(callback), 500); // Check again after 500ms if the button is not found
+            } else {
+                callback(button);
             }
         }
 
-        const button = checkForButton();
-        button.addEventListener('click', function() {
-            if (isStart) {
-                new Audio("data:audio/wav;base64," + blip).play();
-            } else {
-                new Audio("data:audio/wav;base64," + blipReversed).play();
-            }
-            isStart = !isStart;
-        });
-                
-        doc.addEventListener('keyup', function (event) {
-            if (event.key === ' ') {
-                button.click();
+        waitForButton((button) => {
+            button.addEventListener('click', function() {
                 if (isStart) {
                     new Audio("data:audio/wav;base64," + blip).play();
                 } else {
                     new Audio("data:audio/wav;base64," + blipReversed).play();
                 }
                 isStart = !isStart;
-            }
+            });
+
+            doc.addEventListener('keyup', function (event) {
+                if (event.key === ' ') {
+                    button.click();
+                }
+            });
         });
     </script>
     """, height=0, width=0)
