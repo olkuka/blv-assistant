@@ -126,6 +126,7 @@ components.html("""
         }
 
         waitForButton((button) => {
+            button.setAttribute('aria-label','recording-button');
             button.focus();
             button.addEventListener('click', function() {
                 if (isStart) {
